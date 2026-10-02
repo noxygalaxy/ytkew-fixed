@@ -334,6 +334,7 @@ pub async fn run_diagnose(cfg_dir: &std::path::Path) -> Result<()> {
     println!();
     println!("authenticated: {}", api.is_authenticated());
     println!("offline:       {}", api.is_offline());
+    println!("credential:    {}", api.credential());
     if let Some(w) = warning {
         println!("warning:       {w}");
     }
@@ -367,7 +368,7 @@ pub async fn run_diagnose(cfg_dir: &std::path::Path) -> Result<()> {
     probe!("library artists", async {
         api.library_artists().await.map(|v| v.len())
     });
-    probe!("history periods", api.history_count());
+    probe!("history entries", api.history_count());
 
     println!();
     println!("liked music (LM auto-playlist):");

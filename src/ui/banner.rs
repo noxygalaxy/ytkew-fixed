@@ -51,8 +51,33 @@ const W: [&str; ROWS] = [
     "╚███╔███╔╝",
     " ╚══╝╚══╝ ",
 ];
+const SPACE: [&str; ROWS] = ["     ", "     ", "     ", "     ", "     ", "     "];
+const F: [&str; ROWS] = [
+    "███████╗",
+    "██╔════╝",
+    "█████╗  ",
+    "██╔══╝  ",
+    "██║     ",
+    "╚═╝     ",
+];
+const I: [&str; ROWS] = [
+    "██████╗",
+    "╚═██╔═╝",
+    "  ██║  ",
+    "  ██║  ",
+    "██████╗",
+    "╚═════╝",
+];
+const X: [&str; ROWS] = [
+    "██╗  ██╗",
+    "╚██╗██╔╝",
+    " ╚███╔╝ ",
+    " ██╔██╗ ",
+    "██╔╝ ██╗",
+    "╚═╝  ╚═╝",
+];
 
-const LETTERS: [&[&str; ROWS]; 5] = [&Y, &T, &K, &E, &W];
+const LETTERS: [&[&str; ROWS]; 9] = [&Y, &T, &K, &E, &W, &SPACE, &F, &I, &X];
 
 /// The wordmark as six rows of equal width.
 pub fn rows() -> [String; ROWS] {

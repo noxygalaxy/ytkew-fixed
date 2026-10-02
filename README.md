@@ -2,7 +2,7 @@
 
 <img src="assets/wordmark.svg" alt="ytkew" width="460">
 
-**YouTube Music on the terminal!**
+**YouTube Music on the terminal! fixed by noxygalaxy**
 
 [![ci](https://github.com/dtDhruv/ytkew/actions/workflows/ci.yml/badge.svg)](https://github.com/dtDhruv/ytkew/actions/workflows/ci.yml)
 [![security](https://github.com/dtDhruv/ytkew/actions/workflows/security.yml/badge.svg)](https://github.com/dtDhruv/ytkew/actions/workflows/security.yml)

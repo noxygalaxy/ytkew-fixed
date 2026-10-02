@@ -76,7 +76,7 @@ if len(rows) < 2 or COLS < 10:
 
 CW, CH = 12.0, 22.0          # cell size; roughly a terminal's aspect
 T = 3.2                      # stroke weight for the box-drawing shadow
-RAMP = ["#e62525", "#cd2121", "#b31d1d", "#9a1919", "#801414", "#4a0c0c"]
+RAMP = ["#9c25e6", "#8221cd", "#6d1db3", "#5c1db3", "#451480", "#310c4a"]
 
 def rect(x, y, w, h):
     return f'<rect x="{x:.2f}" y="{y:.2f}" width="{w:.2f}" height="{h:.2f}"/>'
@@ -112,8 +112,8 @@ PAD = 3.0
 W, H = COLS * CW + PAD * 2, len(rows) * CH + PAD * 2
 parts = [
     f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W:.0f} {H:.0f}" '
-    f'width="{W:.0f}" height="{H:.0f}" role="img" aria-label="ytkew">',
-    "  <title>ytkew</title>",
+    f'width="{W:.0f}" height="{H:.0f}" role="img" aria-label="ytkew-fixed">',
+    "  <title>ytkew-fixed</title>",
     "  <!-- Generated from the ANSI Shadow banner the program draws in its own",
     "       menu; see .github/scripts/gen_wordmark.py. Vector rather than text",
     "       so the letterforms cannot come apart in a browser's font. -->",

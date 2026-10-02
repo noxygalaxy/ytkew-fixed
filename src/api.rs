@@ -10,12 +10,15 @@
 //! work with no credentials at all. So `ytkew <query>` is useful before the
 //! user has set anything up, and only "my playlists" demands a cookie.
 
+mod tv;
+
 use crate::model::{track_from_playlist_item, Track};
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Result};
 use futures::stream::{Stream, StreamExt};
 use std::path::{Path, PathBuf};
+use tokio::sync::OnceCell;
 use ytmapi_rs::auth::noauth::NoAuthToken;
-use ytmapi_rs::auth::{BrowserToken, OAuthToken};
+use ytmapi_rs::auth::BrowserToken;
 use ytmapi_rs::common::{AlbumID, ArtistChannelID, PlaylistID, VideoID};
 use ytmapi_rs::common::{LikeStatus, TextRun, YoutubeID};
 use ytmapi_rs::parse::{
@@ -31,11 +34,36 @@ const NEEDS_AUTH: &str =
     "not signed in -- run `ytkew --auth cookie` or `ytkew --auth oauth` to reach your library";
 const OFFLINE: &str = "no connection to YouTube Music";
 
+const PUBLIC_RETRY_PAUSE: std::time::Duration = std::time::Duration::from_millis(1500);
+
 /// Ceiling on the items a single paged query will pull. YouTube hands back
 /// roughly a hundred per page, so this allows about fifty round trips -- well
 /// past any real playlist, but bounded, because a continuation token that
 /// keeps pointing at more results would otherwise never stop.
 const MAX_ITEMS: usize = 5_000;
+
+struct Oauth {
+    tv: tv::Tv,
+    public: OnceCell<YtMusic<NoAuthToken>>,
+}
+
+impl Oauth {
+    async fn public(&self) -> Result<&YtMusic<NoAuthToken>> {
+        self.public
+            .get_or_try_init(|| async {
+                match YtMusic::new_unauthenticated().await {
+                    Ok(yt) => Ok(yt),
+                    Err(_) => {
+                        tokio::time::sleep(PUBLIC_RETRY_PAUSE).await;
+                        YtMusic::new_unauthenticated()
+                            .await
+                            .map_err(|e| anyhow!("{e}"))
+                    }
+                }
+            })
+            .await
+    }
+}
 
 enum Backend {
     /// Could not reach YouTube Music at startup. Every query fails with a
@@ -43,7 +71,7 @@ enum Backend {
     Offline,
     NoAuth(YtMusic<NoAuthToken>),
     Browser(YtMusic<BrowserToken>),
-    OAuth(YtMusic<OAuthToken>),
+    OAuth(Box<Oauth>),
 }
 
 /// A playlist as it appears in the library browser.
@@ -82,19 +110,25 @@ macro_rules! any_auth {
             Backend::Offline => return Err(anyhow!(OFFLINE)),
             Backend::NoAuth($yt) => $body,
             Backend::Browser($yt) => $body,
-            Backend::OAuth($yt) => $body,
+            Backend::OAuth(oauth) => {
+                let $yt = oauth.public().await?;
+                $body
+            }
         }
     };
 }
 
 /// Dispatch a call that requires credentials, erroring helpfully if absent.
-macro_rules! logged_in {
-    ($self:ident, |$yt:ident| $body:expr) => {
+macro_rules! account {
+    ($self:ident, |$yt:ident| $cookie_body:expr, |$tv:ident| $tv_body:expr) => {
         match &$self.backend {
             Backend::Offline => return Err(anyhow!(OFFLINE)),
             Backend::NoAuth(_) => return Err(anyhow!(NEEDS_AUTH)),
-            Backend::Browser($yt) => $body,
-            Backend::OAuth($yt) => $body,
+            Backend::Browser($yt) => $cookie_body,
+            Backend::OAuth(oauth) => {
+                let $tv = &oauth.tv;
+                $tv_body
+            }
         }
     };
 }
@@ -148,32 +182,27 @@ impl Api {
         // Failing here means no network. Start anyway in an offline state --
         // the user can still see the UI and read the error, and retrying is
         // just a restart away.
-        match YtMusic::new_unauthenticated().await {
-            Ok(yt) => Self {
+        match Self::anonymous_client().await {
+            Some(yt) => Self {
                 backend: Backend::NoAuth(yt),
             },
-            Err(_) => Self {
+            None => Self {
                 backend: Backend::Offline,
             },
         }
     }
 
+    async fn anonymous_client() -> Option<YtMusic<NoAuthToken>> {
+        YtMusic::new_unauthenticated().await.ok()
+    }
+
     async fn from_oauth_file(path: &Path) -> Result<Self> {
-        let raw = tokio::fs::read_to_string(path)
-            .await
-            .with_context(|| format!("reading {}", path.display()))?;
-        let token: OAuthToken =
-            serde_json::from_str(&raw).context("oauth.json is not a valid saved token")?;
-        let mut yt = YtMusic::from_auth_token(token);
-        // Access tokens last minutes, so refresh on load and persist the new
-        // one; otherwise every restart would fail its first query.
-        if let Ok(fresh) = yt.refresh_token().await {
-            if let Ok(json) = serde_json::to_string_pretty(&fresh) {
-                let _ = tokio::fs::write(path, json).await;
-            }
-        }
+        let tv = tv::Tv::load(path).await?;
         Ok(Self {
-            backend: Backend::OAuth(yt),
+            backend: Backend::OAuth(Box::new(Oauth {
+                tv,
+                public: OnceCell::new(),
+            })),
         })
     }
 
@@ -183,6 +212,15 @@ impl Api {
 
     pub fn is_offline(&self) -> bool {
         matches!(self.backend, Backend::Offline)
+    }
+
+    pub fn credential(&self) -> &'static str {
+        match &self.backend {
+            Backend::Offline => "offline",
+            Backend::NoAuth(_) => "none",
+            Backend::Browser(_) => "cookie",
+            Backend::OAuth(_) => "oauth (via YouTube TV)",
+        }
     }
 
     // --- unauthenticated-capable queries ---------------------------------
@@ -305,14 +343,18 @@ impl Api {
         playlist_id: &str,
         mut on_page: impl FnMut(Vec<Track>),
     ) -> Result<()> {
-        let query = GetPlaylistTracksQuery::new(PlaylistID::from_raw(browse_id(playlist_id)));
-        any_auth!(self, |yt| drain(
-            yt.stream(&query),
-            |page: Vec<PlaylistItem>| {
-                on_page(page.iter().filter_map(track_from_playlist_item).collect())
-            }
+        let id = browse_id(playlist_id);
+        account!(
+            self,
+            |yt| {
+                let query = GetPlaylistTracksQuery::new(PlaylistID::from_raw(id));
+                drain(yt.stream(&query), |page: Vec<PlaylistItem>| {
+                    on_page(page.iter().filter_map(track_from_playlist_item).collect())
+                })
+                .await
+            },
+            |tv| tv.playlist_tracks(&id, on_page).await
         )
-        .await)
     }
 
     pub async fn playlist_tracks(&self, playlist_id: &str) -> Result<Vec<Track>> {
@@ -360,23 +402,26 @@ impl Api {
         &self,
         mut on_page: impl FnMut(Vec<Playlist>),
     ) -> Result<()> {
-        let query = GetLibraryPlaylistsQuery;
-        let res = logged_in!(self, |yt| drain(
-            yt.stream(&query),
-            |page: Vec<LibraryPlaylist>| {
-                on_page(
-                    page.into_iter()
-                        .map(|p| Playlist {
-                            id: p.playlist_id.get_raw().to_string(),
-                            title: p.title,
-                            author: p.author,
-                            track_count: p.tracks,
-                        })
-                        .collect(),
-                )
-            }
-        )
-        .await);
+        let res = account!(
+            self,
+            |yt| drain(
+                yt.stream(&GetLibraryPlaylistsQuery),
+                |page: Vec<LibraryPlaylist>| {
+                    on_page(
+                        page.into_iter()
+                            .map(|p| Playlist {
+                                id: p.playlist_id.get_raw().to_string(),
+                                title: p.title,
+                                author: p.author,
+                                track_count: p.tracks,
+                            })
+                            .collect(),
+                    )
+                }
+            )
+            .await,
+            |tv| tv.library_playlists(on_page).await
+        );
         ignore_missing_shelf(res)
     }
 
@@ -388,12 +433,15 @@ impl Api {
     }
 
     pub async fn library_songs_paged(&self, mut on_page: impl FnMut(Vec<Track>)) -> Result<()> {
-        let query = GetLibrarySongsQuery::default();
-        let res = logged_in!(self, |yt| drain(
-            yt.stream(&query),
-            |page: Vec<TableListSong>| on_page(page.iter().map(Track::from).collect())
-        )
-        .await);
+        let res = account!(
+            self,
+            |yt| drain(
+                yt.stream(&GetLibrarySongsQuery::default()),
+                |page: Vec<TableListSong>| on_page(page.iter().map(Track::from).collect())
+            )
+            .await,
+            |tv| tv.library_songs(on_page).await
+        );
         ignore_missing_shelf(res)
     }
 
@@ -404,22 +452,25 @@ impl Api {
     }
 
     pub async fn library_albums_paged(&self, mut on_page: impl FnMut(Vec<AlbumRef>)) -> Result<()> {
-        let query = GetLibraryAlbumsQuery::default();
-        let res = logged_in!(self, |yt| drain(
-            yt.stream(&query),
-            |page: Vec<SearchResultAlbum>| {
-                on_page(
-                    page.into_iter()
-                        .map(|a| AlbumRef {
-                            id: a.album_id.get_raw().to_string(),
-                            title: a.title,
-                            year: a.year,
-                        })
-                        .collect(),
-                )
-            }
-        )
-        .await);
+        let res = account!(
+            self,
+            |yt| drain(
+                yt.stream(&GetLibraryAlbumsQuery::default()),
+                |page: Vec<SearchResultAlbum>| {
+                    on_page(
+                        page.into_iter()
+                            .map(|a| AlbumRef {
+                                id: a.album_id.get_raw().to_string(),
+                                title: a.title,
+                                year: a.year,
+                            })
+                            .collect(),
+                    )
+                }
+            )
+            .await,
+            |tv| tv.library_albums(on_page).await
+        );
         ignore_missing_shelf(res)
     }
 
@@ -433,22 +484,25 @@ impl Api {
         &self,
         mut on_page: impl FnMut(Vec<ArtistRef>),
     ) -> Result<()> {
-        let query = GetLibraryArtistsQuery::default();
-        let res = logged_in!(self, |yt| drain(
-            yt.stream(&query),
-            |page: Vec<LibraryArtist>| {
-                on_page(
-                    page.into_iter()
-                        .map(|a| ArtistRef {
-                            channel_id: a.channel_id.get_raw().to_string(),
-                            name: a.artist,
-                            subtitle: a.byline,
-                        })
-                        .collect(),
-                )
-            }
-        )
-        .await);
+        let res = account!(
+            self,
+            |yt| drain(
+                yt.stream(&GetLibraryArtistsQuery::default()),
+                |page: Vec<LibraryArtist>| {
+                    on_page(
+                        page.into_iter()
+                            .map(|a| ArtistRef {
+                                channel_id: a.channel_id.get_raw().to_string(),
+                                name: a.artist,
+                                subtitle: a.byline,
+                            })
+                            .collect(),
+                    )
+                }
+            )
+            .await,
+            |_tv| Err::<(), _>(anyhow!(tv::NO_ARTIST_PAGES))
+        );
         ignore_missing_shelf(res)
     }
 
@@ -507,14 +561,23 @@ impl Api {
     }
 
     pub async fn history_count(&self) -> Result<usize> {
-        let res = logged_in!(self, |yt| yt.get_history().await);
-        Ok(empty_on_missing_shelf(res)?.len())
+        account!(
+            self,
+            |yt| empty_on_missing_shelf(yt.get_history().await).map(|h| h.len()),
+            |tv| tv.history_len().await
+        )
     }
 
     pub async fn rate(&self, video_id: &str, status: LikeStatus) -> Result<()> {
         let id = VideoID::from_raw(video_id);
-        logged_in!(self, |yt| yt.rate_song(id.clone(), status).await)?;
-        Ok(())
+        account!(
+            self,
+            |yt| yt
+                .rate_song(id, status)
+                .await
+                .map_err(|e| anyhow!(e.to_string())),
+            |tv| tv.rate(video_id, status).await
+        )
     }
 }
 

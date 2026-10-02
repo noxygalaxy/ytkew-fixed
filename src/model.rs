@@ -92,7 +92,7 @@ pub fn best_thumbnail(thumbs: &[Thumbnail], size: u32) -> Option<String> {
         .map(|t| upscale_thumbnail(&t.url, size))
 }
 
-const COVER_PX: u32 = 544;
+pub(crate) const COVER_PX: u32 = 544;
 
 impl From<&SearchResultSong> for Track {
     fn from(s: &SearchResultSong) -> Self {
