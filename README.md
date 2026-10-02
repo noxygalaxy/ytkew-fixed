@@ -8,8 +8,20 @@
 [![security](https://github.com/dtDhruv/ytkew/actions/workflows/security.yml/badge.svg)](https://github.com/dtDhruv/ytkew/actions/workflows/security.yml)
 [![licence](https://img.shields.io/badge/licence-GPL--3.0--or--later-e62525?style=flat)](LICENSE)
 
-<img src="assets/ytkew_track_1.png" alt="ytkew playing a queue: cover art, spectrum visualizer and the up-next list">
-
+<table cellpadding="0" cellspacing="0" style="border-collapse: collapse; border: none; font-family: sans-serif;">
+  <tr>
+    <td style="">App Interface</td>
+    <td style="">Fixed cover art for videos</td>
+  </tr>
+  <tr>
+    <td style="padding: 0; margin: 0; border: none; vertical-align: top;">
+      <img src="assets/ytkew_track_1.png" height="420" style="display: block; border-radius: 12px 0 0 12px; height: 420px; width: auto;" alt="App Interface screenshot">
+    </td>
+    <td style="padding: 0; margin: 0; border: none; vertical-align: top;">
+      <img src="assets/fixed-cover.png" height="420" style="display: block; border-radius: 0 12px 12px 0; height: 420px; width: auto;" alt="Fixed cover art example">
+    </td>
+  </tr>
+</table>
 </div>
 
 ytkew plays music from your YouTube Music account without a browser.

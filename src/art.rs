@@ -60,7 +60,7 @@ impl CoverLoader {
         let path = self.cache_path(url);
         if let Ok(bytes) = tokio::fs::read(&path).await {
             if let Ok(img) = image::load_from_memory(&bytes) {
-                return Ok(img);
+                return Ok(square(&img));
             }
         }
         let bytes = self
@@ -74,7 +74,8 @@ impl CoverLoader {
             .context("reading cover art")?;
         // Best-effort cache write; a failure here is not worth surfacing.
         let _ = tokio::fs::write(&path, &bytes).await;
-        image::load_from_memory(&bytes).context("decoding cover art")
+        let img = image::load_from_memory(&bytes).context("decoding cover art")?;
+        Ok(square(&img))
     }
 
     /// Where a cover URL is cached on disk.
@@ -83,6 +84,15 @@ impl CoverLoader {
         url.hash(&mut h);
         self.cache.join(format!("{:016x}", h.finish()))
     }
+}
+
+pub fn square(img: &DynamicImage) -> DynamicImage {
+    let (w, h) = (img.width(), img.height());
+    if w == 0 || h == 0 || w == h {
+        return img.clone();
+    }
+    let side = w.min(h);
+    img.crop_imm((w - side) / 2, (h - side) / 2, side, side)
 }
 
 /// Render `img` to at most `max_cols` x `rows` cells, preserving the image's
