@@ -136,6 +136,9 @@ macro_rules! account {
 impl Api {
     /// Try cookie auth, then OAuth, then fall back to unauthenticated so the
     /// app still starts and can still search.
+    ///
+    /// modified by noxy: now it uses oauth for playlists load and cookies for search
+    /// because i'm using a brand account and cookies don't support them
     pub async fn connect(config_dir: &Path) -> (Self, Option<String>) {
         let cookie = config_dir.join("cookie.txt");
         let oauth = config_dir.join("oauth.json");
@@ -143,6 +146,15 @@ impl Api {
         // Retro-tighten permissions on credentials written by older versions.
         for f in [&cookie, &oauth] {
             harden_permissions(f);
+        }
+
+        let mut rejected = Vec::new();
+
+        if oauth.exists() {
+            match Self::from_oauth_file(&oauth).await {
+                Ok(api) => return (api, None),
+                Err(e) => rejected.push(format!("oauth ({e})")),
+            }
         }
 
         if cookie.exists() {
@@ -155,27 +167,22 @@ impl Api {
                         None,
                     )
                 }
-                Err(e) => {
-                    let warn = format!("cookie auth failed ({e}); continuing unauthenticated");
-                    return (Self::unauthenticated().await, Some(warn));
-                }
+                Err(e) => rejected.push(format!("cookie ({e})")),
             }
         }
 
-        if oauth.exists() {
-            match Self::from_oauth_file(&oauth).await {
-                Ok(api) => return (api, None),
-                Err(e) => {
-                    let warn = format!("oauth failed ({e}); continuing unauthenticated");
-                    return (Self::unauthenticated().await, Some(warn));
-                }
-            }
+        if rejected.is_empty() {
+            return (
+                Self::unauthenticated().await,
+                Some("no credentials found -- search works, library needs `ytkew auth`".into()),
+            );
         }
 
-        (
-            Self::unauthenticated().await,
-            Some("no credentials found -- search works, library needs `ytkew auth`".into()),
-        )
+        let warn = format!(
+            "{} could not be loaded; continuing unauthenticated",
+            rejected.join(", ")
+        );
+        (Self::unauthenticated().await, Some(warn))
     }
 
     async fn unauthenticated() -> Self {
@@ -422,7 +429,7 @@ impl Api {
             .await,
             |tv| tv.library_playlists(on_page).await
         );
-        ignore_missing_shelf(res)
+        ignore_missing_shelf(res, GRID_RENDERER)
     }
 
     pub async fn library_playlists(&self) -> Result<Vec<Playlist>> {
@@ -442,7 +449,7 @@ impl Api {
             .await,
             |tv| tv.library_songs(on_page).await
         );
-        ignore_missing_shelf(res)
+        ignore_missing_shelf(res, SHELF_RENDERER)
     }
 
     pub async fn library_songs(&self) -> Result<Vec<Track>> {
@@ -471,7 +478,7 @@ impl Api {
             .await,
             |tv| tv.library_albums(on_page).await
         );
-        ignore_missing_shelf(res)
+        ignore_missing_shelf(res, GRID_RENDERER)
     }
 
     pub async fn library_albums(&self) -> Result<Vec<AlbumRef>> {
@@ -503,7 +510,7 @@ impl Api {
             .await,
             |_tv| Err::<(), _>(anyhow!(tv::NO_ARTIST_PAGES))
         );
-        ignore_missing_shelf(res)
+        ignore_missing_shelf(res, SHELF_RENDERER)
     }
 
     pub async fn library_artists(&self) -> Result<Vec<ArtistRef>> {
@@ -563,7 +570,9 @@ impl Api {
     pub async fn history_count(&self) -> Result<usize> {
         account!(
             self,
-            |yt| empty_on_missing_shelf(yt.get_history().await).map(|h| h.len()),
+            |yt| {
+                empty_on_missing_shelf(yt.get_history().await, SHELF_RENDERER).map(|h| h.len())
+            },
             |tv| tv.history_len().await
         )
     }
@@ -642,20 +651,22 @@ where
     Ok(())
 }
 
+const GRID_RENDERER: &str = "gridRenderer";
+const SHELF_RENDERER: &str = "musicShelfRenderer";
+
 /// An empty library section makes YouTube omit the shelf entirely, which
 /// ytmapi-rs reports as a missing-key parse error. Treat that specific shape
 /// as "nothing here" rather than showing the user a raw JSON path.
-fn is_missing_shelf(msg: &str) -> bool {
-    msg.contains("not found in Api response")
-        && (msg.contains("musicShelfRenderer") || msg.contains("gridRenderer"))
+fn is_missing_shelf(msg: &str, shelf: &str) -> bool {
+    msg.contains("not found in Api response") && msg.contains(shelf)
 }
 
-fn empty_on_missing_shelf<T: Default>(res: Result<T, ytmapi_rs::Error>) -> Result<T> {
+fn empty_on_missing_shelf<T: Default>(res: Result<T, ytmapi_rs::Error>, shelf: &str) -> Result<T> {
     match res {
         Ok(v) => Ok(v),
         Err(e) => {
             let msg = e.to_string();
-            if is_missing_shelf(&msg) {
+            if is_missing_shelf(&msg, shelf) {
                 Ok(T::default())
             } else {
                 Err(anyhow!(msg))
@@ -666,9 +677,9 @@ fn empty_on_missing_shelf<T: Default>(res: Result<T, ytmapi_rs::Error>) -> Resul
 
 /// The paged equivalent: an absent shelf means the section is empty, not that
 /// the fetch failed.
-fn ignore_missing_shelf(res: Result<()>) -> Result<()> {
+fn ignore_missing_shelf(res: Result<()>, shelf: &str) -> Result<()> {
     match res {
-        Err(e) if is_missing_shelf(&e.to_string()) => Ok(()),
+        Err(e) if is_missing_shelf(&e.to_string(), shelf) => Ok(()),
         other => other,
     }
 }
@@ -779,6 +790,33 @@ mod tests {
                 backend: Backend::Offline,
             }
         }
+    }
+
+    #[test]
+    fn an_absent_shelf_means_empty_rather_than_broken() {
+        let absent = format!("Key /contents/0/{SHELF_RENDERER} not found in Api response.");
+        assert!(is_missing_shelf(&absent, SHELF_RENDERER));
+        assert!(is_missing_shelf(
+            &format!("Key /contents/0/{GRID_RENDERER} not found in Api response."),
+            GRID_RENDERER
+        ));
+    }
+
+    #[test]
+    fn a_moved_shelf_is_reported_rather_than_read_as_empty() {
+        let moved = format!("Key /contents/0/{SHELF_RENDERER} not found in Api response.");
+        assert!(!is_missing_shelf(&moved, GRID_RENDERER));
+        let elsewhere = "Key /contents/twoColumnBrowseResultsRenderer/secondaryContents/\
+                         sectionListRenderer/contents/0/musicPlaylistShelfRenderer not found \
+                         in Api response.";
+        assert!(!is_missing_shelf(elsewhere, SHELF_RENDERER));
+        assert!(!is_missing_shelf(elsewhere, GRID_RENDERER));
+    }
+
+    #[test]
+    fn an_unrelated_failure_is_never_treated_as_an_empty_shelf() {
+        assert!(!is_missing_shelf("connection reset", SHELF_RENDERER));
+        assert!(!is_missing_shelf("", SHELF_RENDERER));
     }
 
     #[tokio::test]
