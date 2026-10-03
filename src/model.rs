@@ -30,6 +30,13 @@ impl Track {
             format!("{} - {}", self.artist, self.title)
         }
     }
+
+    pub fn cover_url(&self) -> Option<String> {
+        self.thumbnail.clone().or_else(|| {
+            (!self.video_id.is_empty())
+                .then(|| format!("https://i.ytimg.com/vi/{}/hqdefault.jpg", self.video_id))
+        })
+    }
 }
 
 /// Parse "3:59" or "1:02:03" into seconds.
@@ -93,6 +100,28 @@ pub fn best_thumbnail(thumbs: &[Thumbnail], size: u32) -> Option<String> {
 }
 
 pub(crate) const COVER_PX: u32 = 544;
+
+fn video_id(url: &str) -> Option<&str> {
+    let rest = url.split_once("/vi/")?.1;
+    let id = rest.split(['/', '?']).next()?;
+    (!id.is_empty()).then_some(id)
+}
+
+pub fn candidates(url: &str, size: u32) -> Vec<String> {
+    let upscaled = upscale_thumbnail(url, size);
+    if upscaled != url {
+        return vec![upscaled];
+    }
+    let Some(id) = video_id(url) else {
+        return vec![url.to_string()];
+    };
+    let mut out: Vec<String> = ["maxresdefault.jpg", "sddefault.jpg", "hqdefault.jpg"]
+        .iter()
+        .map(|name| format!("https://i.ytimg.com/vi/{id}/{name}"))
+        .collect();
+    out.push(url.to_string());
+    out
+}
 
 impl From<&SearchResultSong> for Track {
     fn from(s: &SearchResultSong) -> Self {

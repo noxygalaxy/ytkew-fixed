@@ -57,25 +57,66 @@ impl CoverLoader {
 
     /// Fetch the image, serving from disk when we've seen this URL before.
     pub async fn load(&self, url: &str) -> Result<DynamicImage> {
-        let path = self.cache_path(url);
-        if let Ok(bytes) = tokio::fs::read(&path).await {
-            if let Ok(img) = image::load_from_memory(&bytes) {
-                return Ok(square(&img));
+        if let Some(img) = self.recall(url).await {
+            return Ok(img);
+        }
+        let candidates = crate::model::candidates(url, crate::model::COVER_PX);
+        let mut last = None;
+        for candidate in &candidates {
+            match self.fetch(candidate).await {
+                Ok(bytes) => {
+                    let img = image::load_from_memory(&bytes).context("decoding cover art")?;
+                    if candidate != url {
+                        log::info!(
+                            "cover {url} -> {candidate} ({}x{})",
+                            img.width(),
+                            img.height()
+                        );
+                    }
+                    let img = square(&img);
+                    self.store(url, &img).await;
+                    return Ok(img);
+                }
+                Err(e) => {
+                    log::info!("cover candidate rejected: {e:#}");
+                    last = Some(e);
+                }
             }
         }
-        let bytes = self
+        log::warn!("no cover art for {url}");
+        Err(last.unwrap_or_else(|| anyhow::anyhow!("no cover art at {url}")))
+    }
+
+    async fn recall(&self, url: &str) -> Option<DynamicImage> {
+        let bytes = tokio::fs::read(self.cache_path(url)).await.ok()?;
+        image::load_from_memory(&bytes).ok().map(|img| square(&img))
+    }
+    
+    async fn store(&self, url: &str, img: &DynamicImage) {
+        let mut encoded = Vec::new();
+        if img
+            .write_to(&mut std::io::Cursor::new(&mut encoded), image::ImageFormat::Jpeg)
+            .is_ok()
+        {
+            let _ = tokio::fs::write(self.cache_path(url), encoded).await;
+        }
+    }
+
+    async fn fetch(&self, url: &str) -> Result<Vec<u8>> {
+        let res = self
             .client
             .get(url)
             .send()
             .await
-            .context("fetching cover art")?
-            .bytes()
+            .with_context(|| format!("fetching {url}"))?;
+        let status = res.status();
+        if !status.is_success() {
+            anyhow::bail!("{url} -> {status}");
+        }
+        res.bytes()
             .await
-            .context("reading cover art")?;
-        // Best-effort cache write; a failure here is not worth surfacing.
-        let _ = tokio::fs::write(&path, &bytes).await;
-        let img = image::load_from_memory(&bytes).context("decoding cover art")?;
-        Ok(square(&img))
+            .with_context(|| format!("reading {url}"))
+            .map(|b| b.to_vec())
     }
 
     /// Where a cover URL is cached on disk.

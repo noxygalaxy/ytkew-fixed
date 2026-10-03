@@ -14,11 +14,14 @@ impl App {
         use mpris_server::{LoopStatus, PlaybackStatus};
         let track = self.queue.current();
         // Point clients at the cached file when it exists; most only handle
-        // file:// for artwork.
-        let art = track.and_then(|t| t.thumbnail.as_ref()).and_then(|url| {
-            let p = self.covers.cache_path(url);
-            p.exists().then_some(p)
-        });
+        // file:// for artwork. That file is the cropped square, so a panel shows
+        // the same cover the terminal does rather than the raw download.
+        let art = track
+            .and_then(|t| t.thumbnail.clone())
+            .and_then(|url| {
+                let p = self.covers.cache_path(&url);
+                p.exists().then_some(p)
+            });
         let status = match track {
             None => PlaybackStatus::Stopped,
             Some(_) if self.player_state.paused => PlaybackStatus::Paused,

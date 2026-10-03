@@ -35,6 +35,7 @@ pub async fn run(cli: Cli) -> Result<()> {
     }
 
     let cfg = config::Config::load(&cfg_dir);
+    crate::log::init(&cfg_dir);
     // Drop a commented default on first run; never overwrite an existing one.
     let _ = config::Config::write_default_if_missing(&cfg_dir);
     let mut state = config::State::load(&cfg_dir, &cfg);
@@ -47,6 +48,7 @@ pub async fn run(cli: Cli) -> Result<()> {
     let _ = crate::theme::write_example_if_missing(&cfg_dir);
     let (themes, theme_problems) = crate::theme::Themes::load(&cfg_dir);
     let (api_handle, warning) = api::Api::connect(&cfg_dir).await;
+    log::info!("started with {}", api_handle.credential());
     let api = Arc::new(api_handle);
 
     let (player, mut player_rx) = Player::spawn(state.volume, cfg.volume_max, &cfg.ytdlp_path)
@@ -56,6 +58,12 @@ pub async fn run(cli: Cli) -> Result<()> {
     let covers = Arc::new(CoverLoader::new(api::cache_dir()));
 
     let mut app = App::new(cfg, state, themes, api.clone(), player, covers, tx.clone());
+    log::info!(
+        "presence: enabled={} github_button={} song={}",
+        app.discord_enabled,
+        app.discord_github,
+        app.discord_song
+    );
     for problem in theme_problems {
         app.notify(format!("theme {problem}"));
     }
@@ -143,6 +151,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         }
 
         app.sync_mpris().await;
+        app.sync_discord().await;
 
         tokio::select! {
             maybe_event = events.next() => {

@@ -390,11 +390,11 @@ pub fn metadata_for(track: &crate::model::Track, art: Option<&std::path::Path>) 
     }
     match art {
         Some(path) => m.set_art_url(Some(format!("file://{}", path.display()))),
-        // Fall back to the remote URL; better than nothing for clients that
-        // can fetch it.
+        // Nothing cached yet. A panel that can only read file:// will show
+        // nothing either way, but a URL costs nothing to offer.
         None => {
-            if let Some(url) = &track.thumbnail {
-                m.set_art_url(Some(url.clone()));
+            if let Some(url) = track.cover_url() {
+                m.set_art_url(Some(url));
             }
         }
     }

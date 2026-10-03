@@ -4044,6 +4044,7 @@ dependencies = [
  "futures",
  "image",
  "libc",
+ "log",
  "mpris-server",
  "png",
  "rand 0.10.2",

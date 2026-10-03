@@ -16,6 +16,7 @@ pub(super) fn draw_menu(f: &mut Frame, area: Rect, app: &App) {
     match app.menu_screen {
         MenuScreen::Main => draw_menu_main(f, area, app),
         MenuScreen::Options => draw_options(f, area, app),
+        MenuScreen::Discord => draw_discord_options(f, area, app),
     }
 }
 
@@ -96,12 +97,49 @@ pub(super) fn draw_menu_main(f: &mut Frame, area: Rect, app: &App) {
     );
 }
 
+pub(super) struct Row {
+    pub label: String,
+    pub value: String,
+    pub description: String,
+}
+
 /// The options pane. Each setting is two rows -- its name, then its value --
 /// with arrows beside the value of the selected row, and that row's
 /// description below the list. This is btop's options layout.
 pub(super) fn draw_options(f: &mut Frame, area: Rect, app: &App) {
     use crate::app::SETTINGS;
+    let rows: Vec<Row> = SETTINGS
+        .iter()
+        .map(|s| Row {
+            label: s.label().to_string(),
+            value: app.setting_value(*s),
+            description: s.description().to_string(),
+        })
+        .collect();
+    draw_page(f, area, app, "options", &rows, app.option_sel);
+}
 
+pub(super) fn draw_discord_options(f: &mut Frame, area: Rect, app: &App) {
+    use crate::app::DISCORD_SETTINGS;
+    let rows: Vec<Row> = DISCORD_SETTINGS
+        .iter()
+        .map(|s| Row {
+            label: s.label().to_string(),
+            value: app.dc_value(*s),
+            description: s.description().to_string(),
+        })
+        .collect();
+    draw_page(f, area, app, "discord rpc", &rows, app.discord_sel);
+}
+
+fn draw_page(
+    f: &mut Frame,
+    area: Rect,
+    app: &App,
+    title: &str,
+    rows: &[Row],
+    selected: usize,
+) {
     let accent = app.palette.accent().to_color();
     let dim = app.palette.secondary().to_color();
     let faint = app.palette.dark.to_color();
@@ -109,7 +147,7 @@ pub(super) fn draw_options(f: &mut Frame, area: Rect, app: &App) {
     const BODY: u16 = 40;
     let w = (BODY + 4).min(area.width);
     // Two rows per setting, a blank line, two of description, two of border.
-    let h = ((SETTINGS.len() as u16 * 2) + 5).min(area.height);
+    let h = ((rows.len() as u16 * 2) + 5).min(area.height);
     let popup = Rect::new(
         area.x + (area.width.saturating_sub(w)) / 2,
         area.y + (area.height.saturating_sub(h)) / 2,
@@ -117,19 +155,19 @@ pub(super) fn draw_options(f: &mut Frame, area: Rect, app: &App) {
         h,
     );
     Clear.render(popup, f.buffer_mut());
-    let inner = panel(f, popup, "options", None, app);
+    let inner = panel(f, popup, title, None, app);
     if inner.width < 8 || inner.height < 4 {
         return;
     }
     let width = inner.width as usize;
 
     let mut lines: Vec<Line> = Vec::new();
-    for (i, setting) in SETTINGS.iter().enumerate() {
-        let selected = i == app.option_sel;
+    for (i, row) in rows.iter().enumerate() {
         // Name row.
+        let is_selected = i == selected;
         lines.push(Line::from(Span::styled(
-            centre(setting.label(), width),
-            if selected {
+            centre(&row.label, width),
+            if is_selected {
                 Style::default()
                     .fg(accent)
                     .add_modifier(Modifier::BOLD | Modifier::REVERSED)
@@ -138,8 +176,7 @@ pub(super) fn draw_options(f: &mut Frame, area: Rect, app: &App) {
             },
         )));
         // Value row, with arrows only where they can be used.
-        let value = app.setting_value(*setting);
-        if selected {
+        if is_selected {
             // One column for each arrow, so the three spans total exactly the
             // row width and the arrows sit hard against the edges.
             let inner_w = width.saturating_sub(2);
@@ -148,7 +185,7 @@ pub(super) fn draw_options(f: &mut Frame, area: Rect, app: &App) {
                     "←",
                     Style::default().fg(accent).add_modifier(Modifier::BOLD),
                 ),
-                Span::styled(centre(&value, inner_w), Style::default().fg(accent)),
+                Span::styled(centre(&row.value, inner_w), Style::default().fg(accent)),
                 Span::styled(
                     "→",
                     Style::default().fg(accent).add_modifier(Modifier::BOLD),
@@ -156,7 +193,7 @@ pub(super) fn draw_options(f: &mut Frame, area: Rect, app: &App) {
             ]));
         } else {
             lines.push(Line::from(Span::styled(
-                centre(&value, width),
+                centre(&row.value, width),
                 Style::default().fg(faint),
             )));
         }
@@ -164,7 +201,10 @@ pub(super) fn draw_options(f: &mut Frame, area: Rect, app: &App) {
     lines.push(Line::default());
 
     // Description of the highlighted setting, wrapped to two lines.
-    let desc = SETTINGS[app.option_sel.min(SETTINGS.len() - 1)].description();
+    let desc = rows
+        .get(selected.min(rows.len().saturating_sub(1)))
+        .map(|r| r.description.as_str())
+        .unwrap_or_default();
     for chunk in wrap(desc, width, 2) {
         lines.push(Line::from(Span::styled(
             chunk,

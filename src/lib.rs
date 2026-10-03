@@ -43,6 +43,8 @@ pub mod browser;
 pub mod cli;
 pub mod config;
 pub mod desktop;
+pub mod discord;
+pub mod log;
 pub mod model;
 pub mod mpris;
 pub mod palette;

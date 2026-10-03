@@ -24,6 +24,9 @@ pub struct State {
     pub theme: String,
     /// Renderer chosen from the menu. Empty means "use the config".
     pub cover_mode: String,
+    pub discord_enabled: bool,
+    pub discord_github: bool,
+    pub discord_song: bool,
 }
 
 impl Default for State {
@@ -36,6 +39,9 @@ impl Default for State {
             cover_visible: true,
             theme: String::new(),
             cover_mode: String::new(),
+            discord_enabled: false,
+            discord_github: true,
+            discord_song: true,
         }
     }
 }
@@ -97,6 +103,9 @@ mod tests {
             cover_visible: false,
             theme: "nord".into(),
             cover_mode: "sixel".into(),
+            discord_enabled: true,
+            discord_github: false,
+            discord_song: false,
         };
         saved.save(&dir).unwrap();
         let back = State::load(&dir, &cfg);
@@ -110,6 +119,37 @@ mod tests {
             back.cover_mode, "sixel",
             "a renderer chosen from the menu must persist"
         );
+        assert!(back.discord_enabled, "the rpc toggle must persist");
+        assert!(!back.discord_github);
+        assert!(!back.discord_song);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn presence_default() {
+        let s = State::default();
+        assert!(!s.discord_enabled);
+
+        let dir = std::env::temp_dir().join(format!("ytkew-dc-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        s.save(&dir).unwrap();
+        let back = State::load(&dir, &Config::default());
+        assert!(!back.discord_enabled);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn stale_key() {
+        let dir = std::env::temp_dir().join(format!("ytkew-dc-old-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("state.toml"),
+            "discord_enabled = true\ndiscord_branding = \"ytm\"\n",
+        )
+        .unwrap();
+        let s = State::load(&dir, &Config::default());
+        assert!(s.discord_enabled);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

@@ -9,6 +9,7 @@
 //! overlay and its settings, [`graphics`] the album-art protocols, [`media`]
 //! the D-Bus surface and [`search`] everything that reaches the API.
 
+mod discord;
 mod graphics;
 mod input;
 mod library;
@@ -21,7 +22,7 @@ pub use graphics::Graphics;
 pub use input::HitRegions;
 pub use library::{LibColumn, LibKind, LibNode, LibRow};
 pub(crate) use menu::MenuOutcome;
-pub use menu::{MenuScreen, MENU_ITEMS, SETTINGS};
+pub use menu::{DiscordSetting, MenuScreen, DISCORD_SETTINGS, MENU_ITEMS, SETTINGS};
 pub use search::{SearchFilter, SearchHit, SEARCH_FILTERS};
 
 use crate::api::Api;
@@ -183,6 +184,13 @@ pub struct App {
     pub menu_sel: usize,
     pub menu_screen: MenuScreen,
     pub option_sel: usize,
+    pub discord_sel: usize,
+
+    pub discord: crate::discord::Discord,
+    pub discord_enabled: bool,
+    pub discord_github: bool,
+    pub discord_song: bool,
+    pub discord_anchor: Option<(String, i64)>,
     /// A library node whose children were requested so its whole contents
     /// could be played once they arrive.
     pending_play: Option<Vec<usize>>,
@@ -256,6 +264,8 @@ impl App {
                 _ => None,
             });
         let cfg_graphics = Graphics::resolve(&cfg, cell_source);
+        let mut discord = crate::discord::Discord::default();
+        discord.set_enabled(state.discord_enabled);
         Self {
             player_state: PlayerState {
                 volume: state.volume,
@@ -308,6 +318,12 @@ impl App {
             menu_sel: 0,
             menu_screen: MenuScreen::Main,
             option_sel: 0,
+            discord_sel: 0,
+            discord,
+            discord_enabled: state.discord_enabled,
+            discord_github: state.discord_github,
+            discord_song: state.discord_song,
+            discord_anchor: None,
             pending_play: None,
             queue_feed: None,
             queue_origin: None,
@@ -341,6 +357,9 @@ impl App {
                 RepeatMode::One => "one".into(),
                 RepeatMode::Off => "off".into(),
             },
+            discord_enabled: self.discord_enabled,
+            discord_github: self.discord_github,
+            discord_song: self.discord_song,
         }
     }
 

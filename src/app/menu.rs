@@ -29,6 +29,7 @@ pub const MENU_ITEMS: [MenuItem; 3] = [MenuItem::Options, MenuItem::Help, MenuIt
 pub enum MenuScreen {
     Main,
     Options,
+    Discord,
 }
 
 /// A row in the options pane. Each is a fixed list of choices stepped through
@@ -45,9 +46,10 @@ pub enum Setting {
     Shuffle,
     Repeat,
     AutoplayRadio,
+    DiscordRpc,
 }
 
-pub const SETTINGS: [Setting; 10] = [
+pub const SETTINGS: [Setting; 11] = [
     Setting::Theme,
     Setting::Keys,
     Setting::SidePane,
@@ -58,7 +60,45 @@ pub const SETTINGS: [Setting; 10] = [
     Setting::Shuffle,
     Setting::Repeat,
     Setting::AutoplayRadio,
+    Setting::DiscordRpc,
 ];
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DiscordSetting {
+    Enabled,
+    GitHubButton,
+    SongDetails,
+}
+
+pub const DISCORD_SETTINGS: [DiscordSetting; 3] = [
+    DiscordSetting::Enabled,
+    DiscordSetting::GitHubButton,
+    DiscordSetting::SongDetails,
+];
+
+impl DiscordSetting {
+    pub fn label(self) -> &'static str {
+        match self {
+            DiscordSetting::Enabled => "Enabled",
+            DiscordSetting::GitHubButton => "Show github button",
+            DiscordSetting::SongDetails => "Show song title, artist and album cover",
+        }
+    }
+
+    pub fn description(self) -> &'static str {
+        match self {
+            DiscordSetting::Enabled => {
+                "Publish what ytkew is playing to the Discord desktop app. Does nothing when Discord is not running."
+            }
+            DiscordSetting::GitHubButton => {
+                "Put a link to this repository under the presence."
+            }
+            DiscordSetting::SongDetails => {
+                "Show the title, artist and cover art. Off leaves just the ytkew logo."
+            }
+        }
+    }
+}
 
 impl Setting {
     pub fn label(self) -> &'static str {
@@ -73,6 +113,7 @@ impl Setting {
             Setting::Shuffle => "Shuffle",
             Setting::Repeat => "Repeat",
             Setting::AutoplayRadio => "Autoplay radio",
+            Setting::DiscordRpc => "Discord RPC",
         }
     }
 
@@ -102,7 +143,14 @@ impl Setting {
             Setting::AutoplayRadio => {
                 "After playing a single search hit, append YouTube's radio mix so it keeps going."
             }
+            Setting::DiscordRpc => {
+                "Show what ytkew is playing in Discord. Enter opens the page of its own options."
+            }
         }
+    }
+
+    pub fn is_button(self) -> bool {
+        matches!(self, Setting::DiscordRpc)
     }
 }
 
@@ -170,6 +218,61 @@ impl App {
                 &["on", "off"],
                 if self.cfg.autoplay_radio { "on" } else { "off" },
             ),
+            Setting::DiscordRpc => pick(
+                &["off", "on"],
+                if self.discord_enabled { "on" } else { "off" },
+            ),
+        }
+    }
+
+    pub fn dc_choices(&self, s: DiscordSetting) -> (Vec<String>, usize) {
+        let pick = |names: &[&str], cur: &str| -> (Vec<String>, usize) {
+            let v: Vec<String> = names.iter().map(|n| n.to_string()).collect();
+            let i = v
+                .iter()
+                .position(|n| n.eq_ignore_ascii_case(cur))
+                .unwrap_or(0);
+            (v, i)
+        };
+        match s {
+            DiscordSetting::Enabled => pick(
+                &["off", "on"],
+                if self.discord_enabled { "on" } else { "off" },
+            ),
+            DiscordSetting::GitHubButton => pick(
+                &["off", "on"],
+                if self.discord_github { "on" } else { "off" },
+            ),
+            DiscordSetting::SongDetails => {
+                pick(&["off", "on"], if self.discord_song { "on" } else { "off" })
+            }
+        }
+    }
+
+    pub fn dc_value(&self, s: DiscordSetting) -> String {
+        let (choices, i) = self.dc_choices(s);
+        choices.get(i).cloned().unwrap_or_default()
+    }
+
+    pub fn dc_adjust(&mut self, s: DiscordSetting, delta: i32) {
+        let (choices, i) = self.dc_choices(s);
+        if choices.is_empty() {
+            return;
+        }
+        let n = choices.len() as i32;
+        let next = (((i as i32 + delta) % n) + n) % n;
+        let value = choices[next as usize].clone();
+        self.apply_discord_setting(s, &value);
+    }
+
+    pub(crate) fn apply_discord_setting(&mut self, s: DiscordSetting, value: &str) {
+        let on = value == "on";
+        match s {
+            DiscordSetting::Enabled => {
+                self.set_presence(on);
+            }
+            DiscordSetting::GitHubButton => self.discord_github = on,
+            DiscordSetting::SongDetails => self.discord_song = on,
         }
     }
 
@@ -254,6 +357,7 @@ impl App {
                 self.resync_prefetch();
             }
             Setting::AutoplayRadio => self.cfg.autoplay_radio = value == "on",
+            Setting::DiscordRpc => self.set_presence(value == "on"),
         }
     }
 
@@ -291,6 +395,12 @@ impl App {
                 Action::ScrollDown => {
                     self.option_sel = (self.option_sel + 1).min(SETTINGS.len() - 1)
                 }
+                Action::Enqueue | Action::EnqueueAndPlay
+                    if SETTINGS[self.option_sel.min(SETTINGS.len() - 1)].is_button() =>
+                {
+                    self.menu_screen = MenuScreen::Discord;
+                    self.discord_sel = 0;
+                }
                 // Left and right step the value, which is what the arrows
                 // beside the selected row advertise.
                 Action::Prev => {
@@ -303,6 +413,23 @@ impl App {
                 }
                 // Escape backs out to the menu rather than closing outright.
                 Action::ToggleMenu => self.menu_screen = MenuScreen::Main,
+                Action::Quit => self.should_quit = true,
+                _ => {}
+            },
+            MenuScreen::Discord => match action {
+                Action::ScrollUp => self.discord_sel = self.discord_sel.saturating_sub(1),
+                Action::ScrollDown => {
+                    self.discord_sel = (self.discord_sel + 1).min(DISCORD_SETTINGS.len() - 1)
+                }
+                Action::Prev => {
+                    let s = DISCORD_SETTINGS[self.discord_sel.min(DISCORD_SETTINGS.len() - 1)];
+                    self.dc_adjust(s, -1);
+                }
+                Action::Next | Action::Enqueue | Action::EnqueueAndPlay => {
+                    let s = DISCORD_SETTINGS[self.discord_sel.min(DISCORD_SETTINGS.len() - 1)];
+                    self.dc_adjust(s, 1);
+                }
+                Action::ToggleMenu => self.menu_screen = MenuScreen::Options,
                 Action::Quit => self.should_quit = true,
                 _ => {}
             },

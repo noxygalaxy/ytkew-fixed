@@ -160,6 +160,7 @@ pub async fn run_diagnose(cfg_dir: &std::path::Path) -> Result<()> {
     // them, or this reports settings the running app does not use.
     let cfg_probe = config::Config::load(cfg_dir);
     let state_probe = config::State::load(cfg_dir, &cfg_probe);
+    crate::log::init(cfg_dir);
     let mut cfg_probe = cfg_probe;
     if cfg_probe.cell_px == [0, 0] && state_probe.cover_cell != [0, 0] {
         cfg_probe.cell_px = state_probe.cover_cell;
@@ -386,8 +387,78 @@ pub async fn run_diagnose(cfg_dir: &std::path::Path) -> Result<()> {
         }
         Err(e) => println!("  {:<22} ERROR: {e}", "liked"),
     }
+
+    println!();
+    println!("discord:");
+    println!(
+        "  {:<22} {}",
+        "enabled",
+        if state_probe.discord_enabled {
+            "yes"
+        } else {
+            "no -- turn it on in Settings -> Discord RPC"
+        }
+    );
+    println!(
+        "  {:<22} github_button={} song_details={}",
+        "options", state_probe.discord_github, state_probe.discord_song
+    );
+    match probe().await {
+        Ok(what) => {
+            for line in what {
+                println!("  {line}");
+            }
+        }
+        Err(e) => println!("  {:<22} ERROR: {e}", "socket"),
+    }
+    println!("  {:<22} {}", "app id", crate::discord::APP_ID);
+    println!(
+        "  {:<22} the name above the presence comes from the Discord portal;",
+        "app name"
+    );
+    println!("               no field in the payload can change it");
+    match crate::log::path() {
+        Some(p) => println!("  {:<22} {}", "log", p.display()),
+        None => println!("  {:<22} (not started)", "log"),
+    }
+
     println!();
     Ok(())
+}
+
+async fn probe() -> Result<Vec<String>> {
+    use crate::discord::{Button, Discord, Presence, LOGO};
+    let mut out = Vec::new();
+    let mut d = Discord::default();
+    d.set_enabled(true);
+    let probe = Presence {
+        details: Some("ytkew --diagnose".into()),
+        state: Some("presence check".into()),
+        large_image: Some(LOGO.into()),
+        large_text: Some(LOGO.into()),
+        small_image: Some(LOGO.into()),
+        small_text: Some(LOGO.into()),
+        window: None,
+        buttons: vec![Button {
+            label: "github".into(),
+            url: crate::discord::GITHUB_URL.into(),
+        }],
+    };
+    d.publish(&probe).await;
+    if !d.connected() {
+        out.push(format!("{:<22} no usable socket -- see the log", "socket"));
+        return Ok(out);
+    }
+    out.push(format!("{:<22} handshake accepted", "socket"));
+    match d.settle(std::time::Duration::from_secs(3)).await {
+        Some(r) => out.push(format!("{:<22} activity {r}", "activity")),
+        None => out.push(format!(
+            "{:<22} sent, but Discord never replied",
+            "activity"
+        )),
+    }
+    d.set_enabled(false);
+    Ok(out)
 }
 
 /// Write a credential with owner-only permissions. A session cookie grants
