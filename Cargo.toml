@@ -1,6 +1,6 @@
 [package]
 name = "ytkew"
-version = "0.1.2"
+version = "0.1.21"
 edition = "2021"
 # The floor the dependency tree already imposes -- ratatui and time both
 # require it -- not a number picked by hand. Packagers rely on this.

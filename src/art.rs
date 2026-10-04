@@ -89,7 +89,13 @@ impl CoverLoader {
 
     async fn recall(&self, url: &str) -> Option<DynamicImage> {
         let bytes = tokio::fs::read(self.cache_path(url)).await.ok()?;
-        image::load_from_memory(&bytes).ok().map(|img| square(&img))
+        let img = image::load_from_memory(&bytes).ok()?;
+        if img.width() == crate::model::COVER_PX && img.height() == crate::model::COVER_PX {
+            return Some(img);
+        }
+        let img = square(&img);
+        self.store(url, &img).await;
+        Some(img)
     }
     
     async fn store(&self, url: &str, img: &DynamicImage) {
@@ -128,12 +134,21 @@ impl CoverLoader {
 }
 
 pub fn square(img: &DynamicImage) -> DynamicImage {
+    let side = crate::model::COVER_PX;
     let (w, h) = (img.width(), img.height());
-    if w == 0 || h == 0 || w == h {
+    if w == 0 || h == 0 {
         return img.clone();
     }
-    let side = w.min(h);
-    img.crop_imm((w - side) / 2, (h - side) / 2, side, side)
+    let short = w.min(h);
+    let cropped = if w == h {
+        img.clone()
+    } else {
+        img.crop_imm((w - short) / 2, (h - short) / 2, short, short)
+    };
+    if short == side {
+        return cropped;
+    }
+    cropped.resize_exact(side, side, FilterType::Lanczos3)
 }
 
 /// Render `img` to at most `max_cols` x `rows` cells, preserving the image's
