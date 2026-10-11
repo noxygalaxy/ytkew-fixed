@@ -9,7 +9,7 @@ ytkew has five filters. `←` and `→` switch between them and re-run the query
 <div class="terminal not-content">
   <div class="terminal-bar"><i></i><i></i><i></i><span>ytkew</span></div>
   <img
-    src="/ytkew/ytkew_search.png"
+    src="/ytkew-fixed/ytkew_search.png"
     alt="ytkew's search pane: the query box, the five filter tabs with videos selected, and the results list"
     width="1400"
     height="856"

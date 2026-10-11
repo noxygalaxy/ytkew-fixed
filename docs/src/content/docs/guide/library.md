@@ -10,7 +10,7 @@ indentation.
 <div class="terminal not-content">
   <div class="terminal-bar"><i></i><i></i><i></i><span>ytkew</span></div>
   <img
-    src="/ytkew/ytkew_library.png"
+    src="/ytkew-fixed/ytkew_library.png"
     alt="ytkew's library as columns: the top level, artists, one artist's albums, and that album's tracks"
     width="1400"
     height="856"

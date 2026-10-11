@@ -24,14 +24,14 @@ whether those files exist.
 | Symptom | Cause |
 |---|---|
 | No sound, everything else looks fine | Check the volume meter in the tab strip. It reads **muted** at zero. |
-| Audio sounds fuzzy or clipped | Volume above 100%. See [Configuration](/ytkew/reference/configuration/). |
+| Audio sounds fuzzy or clipped | Volume above 100%. See [Configuration](/ytkew-fixed/reference/configuration/). |
 | Cover art is the wrong size | Sixel with a bad cell size. Press `[` and `]`, or set `cover_mode = "blocks"`. |
 | Cover art is missing entirely | The terminal answered no to both capability queries. Half-blocks should still draw — check `cover_enabled`. |
 | `failed to spawn mpv` | mpv is not on `PATH`. The error lists install commands. |
 | `yt-dlp not found on PATH` | Install it, or set `ytdlp_path`. Nothing plays without it. |
 | Tracks fail to load, but yt-dlp is installed | Almost always a stale yt-dlp. See below. |
 | First track stalls for seconds | Normal: yt-dlp has to resolve the stream. Later tracks are prefetched. |
-| Library is empty but you have playlists | Liked Music and Library Songs are different sets. See [Library](/ytkew/guide/library/). |
+| Library is empty but you have playlists | Liked Music and Library Songs are different sets. See [Library](/ytkew-fixed/guide/library/). |
 | A playlist stops at 5,000 tracks | The paging cap. It is there so a runaway continuation cannot spin forever. |
 | Media keys do nothing | No session D-Bus. Everything else still works. |
 | Generic icon in the launcher or now-playing panel | The desktop entry is not installed. `ytkew --install-desktop-entry`. |

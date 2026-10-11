@@ -9,7 +9,7 @@ that decides what happens when you play something else.
 <div class="terminal not-content">
   <div class="terminal-bar"><i></i><i></i><i></i><span>ytkew</span></div>
   <img
-    src="/ytkew/ytkew_queue.png"
+    src="/ytkew-fixed/ytkew_queue.png"
     alt="ytkew's queue pane: the running order with the current track highlighted at the top"
     width="1400"
     height="856"

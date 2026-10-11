@@ -8,7 +8,7 @@ Four panes, numbered in the tab strip.
 <div class="terminal not-content">
   <div class="terminal-bar"><i></i><i></i><i></i><span>ytkew</span></div>
   <img
-    src="/ytkew/ytkew_track_1.png"
+    src="/ytkew-fixed/ytkew_track_1.png"
     alt="ytkew's track view: the tab strip, now playing with cover art and spectrum, and the up-next pane"
     width="1400"
     height="856"

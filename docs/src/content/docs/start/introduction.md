@@ -27,6 +27,6 @@ its playback from mpv — so a slow redraw can never stutter the audio.
 
 ## Where to go next
 
-- [Install](/ytkew/start/install/) — including the desktop entry and icon
-- [Signing in](/ytkew/start/signing-in/) — three ways, one of them automatic
-- [Keys](/ytkew/guide/keys/) — both presets
+- [Install](/ytkew-fixed/start/install/) — including the desktop entry and icon
+- [Signing in](/ytkew-fixed/start/signing-in/) — three ways, one of them automatic
+- [Keys](/ytkew-fixed/guide/keys/) — both presets
