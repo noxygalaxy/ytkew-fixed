@@ -71,6 +71,13 @@ export default defineConfig({
             { label: "Architecture", slug: "reference/architecture" },
           ],
         },
+        {
+          label: "Legal",
+          items: [
+            { label: "Privacy policy", slug: "privacy" },
+            { label: "Terms of service", slug: "terms" },
+          ],
+        },
       ],
     }),
   ],
