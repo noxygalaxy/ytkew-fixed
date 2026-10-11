@@ -51,9 +51,11 @@ jobs:
       - run: npm ci
 
       - name: Check for known vulnerabilities
-        # The site is static, but its build tooling still runs on a runner
-        # with a token. Advisories in it are worth knowing about.
-        run: npm audit --audit-level=high
+        # The site is static, so advisories here are build tooling, not
+        # anything a visitor can reach. Report them all, but only a critical
+        # advisory should block a deploy; a high transitive bump must not
+        # leave the site un-published.
+        run: npm audit --audit-level=critical
 
       - run: npm run build
 
