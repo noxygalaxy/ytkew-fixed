@@ -59,7 +59,7 @@ jobs:
 
       - name: Check every internal link resolves
         working-directory: .
-        run: python3 .github/scripts/check_links.py docs/dist --base /ytkew
+        run: python3 .github/scripts/check_links.py docs/dist --base /ytkew-fixed
 
       - name: Check Pages is enabled
         # configure-pages reports a bare "Not Found" for this, which reads

@@ -5,7 +5,7 @@ A dead anchor or a link to a page that was renamed is invisible until someone
 clicks it, so fail the build instead. Runs against generated output, which is
 why it takes a directory rather than knowing anything about the source.
 
-    python3 .github/scripts/check_links.py docs/dist --base /ytkew
+    python3 .github/scripts/check_links.py docs/dist --base /ytkew-fixed
 """
 
 import argparse

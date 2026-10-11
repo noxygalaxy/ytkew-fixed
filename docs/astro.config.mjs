@@ -3,9 +3,9 @@ import { defineConfig, passthroughImageService } from "astro/config";
 import starlight from "@astrojs/starlight";
 
 export default defineConfig({
-  // A project site, so everything is served under /ytkew/.
-  site: "https://dtdhruv.github.io",
-  base: "/ytkew",
+  // A project site, so everything is served under /ytkew-fixed/.
+  site: "https://noxygalaxy.github.io",
+  base: "/ytkew-fixed",
   trailingSlash: "always",
 
   // Nothing here needs resizing: the icon and wordmark are SVGs, and the
@@ -27,11 +27,11 @@ export default defineConfig({
         {
           icon: "github",
           label: "GitHub",
-          href: "https://github.com/dtDhruv/ytkew",
+          href: "https://github.com/noxygalaxy/ytkew-fixed",
         },
       ],
       editLink: {
-        baseUrl: "https://github.com/dtDhruv/ytkew/edit/main/docs/",
+        baseUrl: "https://github.com/noxygalaxy/ytkew-fixed/edit/main/docs/",
       },
       customCss: ["./src/styles/ytkew.css"],
       lastUpdated: true,
